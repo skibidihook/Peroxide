@@ -1355,7 +1355,8 @@ do
             local Label = Library:CreateLabel({
                 Position = UDim2.new(0, 4, 0, 0), Size = UDim2.new(1, -6, 1, 0),
                 TextSize = 14, Text = Text, TextXAlignment = Enum.TextXAlignment.Left,
-                ZIndex = 9, Parent = Button,
+                TextScaled = false, TextWrapped = false, TextTruncate = Enum.TextTruncate.AtEnd,
+                ClipsDescendants = true, ZIndex = 9, Parent = Button,
             })
 
             Row.Button = Button
