@@ -1365,6 +1365,7 @@ do
             function Row:SetText(NewText) Label.Text = NewText end
             function Row:SetColor(Color) Label.TextColor3 = Color end
             function Row:SetSelected(State) Button.BackgroundTransparency = State and 0.8 or 1 end
+            function Row:SetCopyValue(Value) Row.CopyValue = Value end
             function Row:Destroy() Button:Destroy() end
 
             Button.MouseButton1Click:Connect(function()
@@ -1372,6 +1373,12 @@ do
                 List.Selected = Row
                 Row:SetSelected(true)
                 if OnClick then Library:SafeCallback(OnClick, Row) end
+            end)
+
+            Button.MouseButton2Click:Connect(function()
+                local Copied = Row.CopyValue or Label.Text
+                pcall(setclipboard, Copied)
+                Library:Notify('Copied to clipboard!', 2)
             end)
 
             table.insert(List.Rows, Row)

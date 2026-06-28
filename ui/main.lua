@@ -156,10 +156,11 @@ local function SelectRemoteCall(Index, Call)
 
     for ArgIndex = 1, #Call.args do
         local Value = Call.args[ArgIndex]
-        RemoteArgList:AddRow(`[{ArgIndex}] {typeof(Value)}: {Summarize(Value)}`, function()
+        local Row = RemoteArgList:AddRow(`[{ArgIndex}] {typeof(Value)}: {Summarize(Value)}`, function()
             SelectedArgIndex = ArgIndex
             SelectedArgValue = Value
         end)
+        Row:SetCopyValue(DescribeFull(Value))
     end
 end
 
@@ -419,9 +420,10 @@ local function SelectHookCall(Call)
 
     for ArgIndex = 1, #Call.args do
         local Value = Call.args[ArgIndex]
-        ClosureDetailList:AddRow(`[{ArgIndex}] {typeof(Value)}: {Summarize(Value)}`, function()
+        local Row = ClosureDetailList:AddRow(`[{ArgIndex}] {typeof(Value)}: {Summarize(Value)}`, function()
             if setClipboard then setClipboard(DescribeFull(Value)) end
         end)
+        Row:SetCopyValue(DescribeFull(Value))
     end
 end
 
@@ -473,9 +475,10 @@ local function ShowValues(Getter)
 
     for Index = 1, #Values do
         local Value = Values[Index]
-        ClosureDetailList:AddRow(`[{Index}] {typeof(Value)}: {Summarize(Value)}`, function()
+        local Row = ClosureDetailList:AddRow(`[{Index}] {typeof(Value)}: {Summarize(Value)}`, function()
             if setClipboard then setClipboard(DescribeFull(Value)) end
         end)
+        Row:SetCopyValue(DescribeFull(Value))
     end
 end
 
