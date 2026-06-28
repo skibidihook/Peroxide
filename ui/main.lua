@@ -5,6 +5,8 @@ local RunService = game:GetService("RunService")
 local HttpService = game:GetService("HttpService")
 local Bridge = px.Bridge
 
+local HexView = false
+
 local function MethodFor(ClassName)
     if ClassName == "RemoteFunction" then
         return "InvokeServer"
@@ -17,15 +19,21 @@ local function MethodFor(ClassName)
     return "FireServer"
 end
 
+local function ToHex(Text)
+    return (Text:gsub(".", function(Char)
+        return string.format("%02X ", string.byte(Char))
+    end))
+end
+
 local function Summarize(Value)
     local Kind = typeof(Value)
 
     if Kind == "Instance" then
         return Value.ClassName
     elseif Kind == "string" then
-        local Text = Value
-        if #Text > 22 then Text = Text:sub(1, 22) .. "..." end
-        return `"{Text}"`
+        local Text = HexView and ToHex(Value) or `"{Value}"`
+        if #Text > 24 then Text = Text:sub(1, 24) .. "..." end
+        return Text
     elseif Kind == "table" then
         return "{table}"
     elseif Kind == "number" or Kind == "boolean" then
@@ -51,7 +59,7 @@ local function DescribeFull(Value)
     if Kind == "Instance" then
         return getInstancePath(Value)
     elseif Kind == "string" then
-        return `"{Value}"`
+        return HexView and ToHex(Value) or `"{Value}"`
     elseif Kind == "table" then
         return tableToString(Value)
     elseif isUserdata(Kind) then
@@ -97,13 +105,16 @@ local SelectedBox = Tabs.RemoteSpy:AddRightGroupbox("Selected")
 local CallsBox = Tabs.RemoteSpy:AddRightGroupbox("Calls")
 local ArgsBox = Tabs.RemoteSpy:AddRightGroupbox("Arguments")
 
-local RemoteList = RemotesBox:AddList({ Height = 240 })
+local RemoteList = RemotesBox:AddList({ Height = 230 })
 local SelectedLabel = SelectedBox:AddLabel("Selected: none", true)
-local CallList = CallsBox:AddList({ Height = 170 })
+local CallList = CallsBox:AddList({ Height = 160 })
 local ArgList = ArgsBox:AddList({ Height = 150 })
 
 local SelectedInstance = nil
 local SelectedCall = nil
+local SelectedCallIndex = nil
+local SelectedArgIndex = nil
+local SelectedArgValue = nil
 local RowByInstance = {}
 local ShownCalls = 0
 
@@ -122,37 +133,17 @@ end
 
 local function SelectCall(Index, Call)
     SelectedCall = Call
+    SelectedCallIndex = Index
+    SelectedArgIndex = nil
+    SelectedArgValue = nil
     ArgList:Clear()
 
     for ArgIndex = 1, #Call.args do
         local Value = Call.args[ArgIndex]
         ArgList:AddRow(`[{ArgIndex}] {typeof(Value)}: {Summarize(Value)}`, function()
-            if setClipboard then setClipboard(DescribeFull(Value)) end
+            SelectedArgIndex = ArgIndex
+            SelectedArgValue = Value
         end)
-    end
-end
-
-local function SelectRemote(Instance)
-    SelectedInstance = Instance
-    SelectedCall = nil
-    ShownCalls = 0
-    CallList:Clear()
-    ArgList:Clear()
-    UpdateSelectedLabel()
-end
-
-local function RefreshRemotes()
-    for Instance, Remote in next, RemoteSpy.CurrentRemotes do
-        local Text = `{Instance.Name} [{Instance.ClassName}] x{Remote.Calls}`
-        local Row = RowByInstance[Instance]
-
-        if Row then
-            Row:SetText(Text)
-        else
-            RowByInstance[Instance] = RemoteList:AddRow(Text, function()
-                SelectRemote(Instance)
-            end)
-        end
     end
 end
 
@@ -174,6 +165,54 @@ local function RefreshCalls()
     ShownCalls = #Logs
 end
 
+local function RebuildCalls()
+    CallList:Clear()
+    ShownCalls = 0
+    RefreshCalls()
+end
+
+local function SelectRemote(Instance)
+    SelectedInstance = Instance
+    SelectedCall = nil
+    SelectedCallIndex = nil
+    SelectedArgIndex = nil
+    SelectedArgValue = nil
+    ShownCalls = 0
+    CallList:Clear()
+    ArgList:Clear()
+    UpdateSelectedLabel()
+end
+
+local function RefreshRemotes()
+    for Instance, Remote in next, RemoteSpy.CurrentRemotes do
+        local Text = `{Instance.Name} [{Instance.ClassName}] x{Remote.Calls}`
+        local Row = RowByInstance[Instance]
+
+        if Row then
+            Row:SetText(Text)
+        else
+            RowByInstance[Instance] = RemoteList:AddRow(Text, function()
+                SelectRemote(Instance)
+            end)
+        end
+    end
+end
+
+local function ApplyCondition(Ignore, ByType)
+    if not SelectedInstance or not SelectedArgIndex then return end
+
+    local Remote = RemoteSpy.CurrentRemotes[SelectedInstance]
+    if not Remote then return end
+
+    local Value = ByType and typeof(SelectedArgValue) or SelectedArgValue
+
+    if Ignore then
+        Remote.IgnoreArg(Remote, SelectedArgIndex, Value, ByType)
+    else
+        Remote.BlockArg(Remote, SelectedArgIndex, Value, ByType)
+    end
+end
+
 local WatchClasses = { "RemoteEvent", "RemoteFunction", "BindableEvent", "BindableFunction" }
 
 for _, Class in next, WatchClasses do
@@ -185,6 +224,16 @@ for _, Class in next, WatchClasses do
         end,
     })
 end
+
+CaptureBox:AddToggle("HexView", {
+    Text = "String hex view",
+    Default = false,
+    Callback = function(Value)
+        HexView = Value
+        if SelectedCall then SelectCall(SelectedCallIndex, SelectedCall) end
+        RebuildCalls()
+    end,
+})
 
 RemotesBox:AddButton({
     Text = "Clear all",
@@ -231,6 +280,15 @@ SelectedBox:AddButton({
             setClipboard(getInstancePath(SelectedInstance))
         end
     end,
+}):AddButton({
+    Text = "Clear conditions",
+    Func = function()
+        local Remote = SelectedInstance and RemoteSpy.CurrentRemotes[SelectedInstance]
+        if Remote then
+            Remote.BlockedArgs = {}
+            Remote.IgnoredArgs = {}
+        end
+    end,
 })
 
 CallsBox:AddButton({
@@ -250,15 +308,39 @@ CallsBox:AddButton({
 })
 
 CallsBox:AddButton({
+    Text = "Remove log",
+    Func = function()
+        local Remote = SelectedInstance and RemoteSpy.CurrentRemotes[SelectedInstance]
+        if Remote and SelectedCall then
+            Remote.DecrementCalls(Remote, SelectedCall)
+            SelectedCall = nil
+            ArgList:Clear()
+            RebuildCalls()
+        end
+    end,
+}):AddButton({
+    Text = "Copy trace",
+    Func = function()
+        if not SelectedCall or not SelectedCall.func or not getInfo or not setClipboard then return end
+
+        local Ok, Info = pcall(getInfo, SelectedCall.func)
+        if Ok and typeof(Info) == "table" then
+            local Name = (Info.name and Info.name ~= "" and Info.name) or "unnamed"
+            local Source = Info.short_src or Info.source or "?"
+            local Line = Info.linedefined or Info.currentline or 0
+            setClipboard(`{Name} @ {Source}:{Line}`)
+        end
+    end,
+})
+
+CallsBox:AddButton({
     Text = "Copy calling script",
     Func = function()
         if SelectedCall and SelectedCall.script and setClipboard then
             setClipboard(getInstancePath(SelectedCall.script))
         end
     end,
-})
-
-CallsBox:AddButton({
+}):AddButton({
     Text = "Copy remote (JSON)",
     Func = function()
         if not SelectedInstance or not Bridge or not setClipboard then return end
@@ -266,6 +348,31 @@ CallsBox:AddButton({
         local Response = Bridge.Run({ Action = "Remote", Path = SelectedInstance:GetFullName(), Max = 50 })
         if Response.Ok then
             setClipboard(HttpService:JSONEncode(Response.Data))
+        end
+    end,
+})
+
+ArgsBox:AddButton({
+    Text = "Block value",
+    Func = function() ApplyCondition(false, false) end,
+}):AddButton({
+    Text = "Block type",
+    Func = function() ApplyCondition(false, true) end,
+})
+
+ArgsBox:AddButton({
+    Text = "Ignore value",
+    Func = function() ApplyCondition(true, false) end,
+}):AddButton({
+    Text = "Ignore type",
+    Func = function() ApplyCondition(true, true) end,
+})
+
+ArgsBox:AddButton({
+    Text = "Copy value",
+    Func = function()
+        if SelectedArgIndex and setClipboard then
+            setClipboard(DescribeFull(SelectedArgValue))
         end
     end,
 })

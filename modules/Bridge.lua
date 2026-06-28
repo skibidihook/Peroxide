@@ -260,6 +260,59 @@ function Actions.GenerateScript(Payload)
     return { Script = BuildScript(Instance, Call) }
 end
 
+function Actions.BlockArg(Payload)
+    local _, Remote = FindRemote(Payload)
+    if not Remote then error("remote not found") end
+
+    Remote.BlockArg(Remote, Payload.Index, Payload.Value, Payload.ByType and true or false)
+    return { Ok = true }
+end
+
+function Actions.IgnoreArg(Payload)
+    local _, Remote = FindRemote(Payload)
+    if not Remote then error("remote not found") end
+
+    Remote.IgnoreArg(Remote, Payload.Index, Payload.Value, Payload.ByType and true or false)
+    return { Ok = true }
+end
+
+function Actions.ClearConditions(Payload)
+    local _, Remote = FindRemote(Payload)
+    if not Remote then error("remote not found") end
+
+    Remote.BlockedArgs = {}
+    Remote.IgnoredArgs = {}
+    return { Ok = true }
+end
+
+function Actions.RemoveLog(Payload)
+    local _, Remote = FindRemote(Payload)
+    if not Remote then error("remote not found") end
+
+    local Call = ResolveCall(Remote, Payload.Index)
+    if not Call then error("call not found") end
+
+    Remote.DecrementCalls(Remote, Call)
+    return { Ok = true }
+end
+
+function Actions.Trace(Payload)
+    local _, Remote = FindRemote(Payload)
+    if not Remote then error("remote not found") end
+
+    local Call = ResolveCall(Remote, Payload.Index)
+    if not Call or not Call.func then error("call or func not found") end
+
+    local Ok, Info = pcall(getInfo, Call.func)
+    if not Ok or typeof(Info) ~= "table" then error("no function info") end
+
+    return {
+        Name = (Info.name and Info.name ~= "" and Info.name) or "unnamed",
+        Source = Info.short_src or Info.source,
+        Line = Info.linedefined or Info.currentline,
+    }
+end
+
 function Actions.Eval(Payload)
     local Source = Payload.Source
 
