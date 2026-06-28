@@ -343,14 +343,14 @@ RemoteCallsBox:AddButton({
 })
 
 RemoteCallsBox:AddButton({
-    Text = "Copy calling script",
+    Text = "Copy caller",
     Func = function()
         if SelectedCall and SelectedCall.script and setClipboard then
             setClipboard(getInstancePath(SelectedCall.script))
         end
     end,
 }):AddButton({
-    Text = "Copy remote (JSON)",
+    Text = "Copy JSON",
     Func = function()
         if not SelectedInstance or not Bridge or not setClipboard then return end
 
@@ -529,10 +529,10 @@ ClosureSelectedBox:AddButton({
 })
 
 ClosureSelectedBox:AddButton({
-    Text = "View constants",
+    Text = "Constants",
     Func = function() ShowValues(getConstants) end,
 }):AddButton({
-    Text = "View upvalues",
+    Text = "Upvalues",
     Func = function() ShowValues(getUpvalues) end,
 })
 
@@ -599,16 +599,35 @@ if OkTheme and OkSave and ThemeManager and SaveManager then
     end)
 end
 
+local Stats = game:GetService("Stats")
 local Accumulator = 0
+local FrameTimer = 0
+local Frames = 0
+local Fps = 60
+
+Library:SetWatermarkVisibility(true)
 
 RemoteSpy.ConnectEvent(function()
     RemoteDirty = true
 end)
 
 px.Events.PeroxideRefresh = RunService.Heartbeat:Connect(function(Delta)
+    Frames += 1
+    FrameTimer += Delta
+    if FrameTimer >= 1 then
+        Fps = Frames
+        Frames = 0
+        FrameTimer = 0
+    end
+
     Accumulator += Delta
     if Accumulator < 0.2 then return end
     Accumulator = 0
+
+    pcall(function()
+        local Ping = math.floor(Stats.Network.ServerStatsItem["Data Ping"]:GetValue())
+        Library:SetWatermark(`Peroxide | {Fps} fps | {Ping} ms`)
+    end)
 
     if RemoteDirty then
         RemoteDirty = false

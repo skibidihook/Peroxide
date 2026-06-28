@@ -1199,7 +1199,8 @@ do
             ZIndex = 6, Parent = Outer,
         })
         local Label = Library:CreateLabel({
-            Size = UDim2.new(1, 0, 1, 0), TextSize = 14, Text = Button.Text, ZIndex = 6, Parent = Inner,
+            Size = UDim2.new(1, 0, 1, 0), TextSize = 14, Text = Button.Text,
+            TextTruncate = Enum.TextTruncate.AtEnd, ZIndex = 6, Parent = Inner,
         })
         Library:Create('UIGradient', {
             Color = ColorSequence.new({
