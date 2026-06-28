@@ -237,7 +237,7 @@ function environment.import(asset)
         return unpack(importCache[asset])
     end
 
-    local source = game:HttpGetAsync("https://raw.githubusercontent.com/" .. user .. "/Peroxide/" .. branch .. '/' .. asset .. ".lua")
+    local source = game:HttpGetAsync("https://raw.githubusercontent.com/" .. user .. "/Peroxide/" .. branch .. '/' .. asset .. ".lua?_=" .. tostring(tick()))
     local assets = { loadstring(source, asset .. '.lua')() }
 
     importCache[asset] = assets
