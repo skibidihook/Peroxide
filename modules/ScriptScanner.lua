@@ -12,23 +12,25 @@ local requiredMethods = {
 
 local function scan(query)
     local scripts = {}
-    --[[query = query or ""
+    query = (query or ""):lower()
 
-    for _i, v in pairs(getGc()) do
-        if type(v) == "function" and not isXClosure(v) then
-            local script = rawget(getfenv(v), "script")
+    for _i, value in pairs(getGc()) do
+        if type(value) == "function" and isLClosure(value) and not isXClosure(value) then
+            local ok, env = pcall(getfenv, value)
+            local script = ok and rawget(env, "script")
 
-            if typeof(script) == "Instance" and 
-                not scripts[script] and 
-                script:IsA("LocalScript") and 
-                script.Name:lower():find(query) and
-                getScriptClosure(script) and
-                pcall(function() getsenv(script) end)
+            if typeof(script) == "Instance"
+                and not scripts[script]
+                and script:IsA("LocalScript")
+                and script.Name:lower():find(query)
             then
-                scripts[script] = LocalScript.new(script)
+                local okNew, object = pcall(LocalScript.new, script)
+                if okNew and object then
+                    scripts[script] = object
+                end
             end
         end
-    end]]
+    end
 
     return scripts
 end

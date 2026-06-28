@@ -16,12 +16,13 @@ local requiredMethods = {
 }
 
 local eventCallback
+local paused = false
 
 -- Define as global function in order to reduce upvalue count in hooks
 function log(hook, callingScript, ...)
     local vargs = {...}
-    
-    if eventCallback and not hook:AreArgsIgnored(vargs) then
+
+    if eventCallback and not paused and not hook:AreArgsIgnored(vargs) then
         local call = {
             script = callingScript,
             args = vargs
@@ -188,4 +189,6 @@ end
 ClosureSpy.Hook = Hook
 ClosureSpy.SetEvent = setEvent
 ClosureSpy.RequiredMethods = requiredMethods
+ClosureSpy.SetPaused = function(state) paused = state and true or false end
+ClosureSpy.IsPaused = function() return paused end
 return ClosureSpy

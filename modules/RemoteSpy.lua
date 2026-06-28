@@ -37,6 +37,7 @@ local methodHooks = {
 }
 
 local currentRemotes = {}
+local paused = false
 
 local remoteDataEvent = Instance.new("BindableEvent")
 local eventSet = false
@@ -82,7 +83,7 @@ nmcTrampoline = hookMetaMethod(game, "__namecall", function(...)
         local argsIgnored = remote.AreArgsIgnored(remote, vargs)
         local argsBlocked = remote.AreArgsBlocked(remote, vargs)
 
-        if eventSet and (not remoteIgnored and not argsIgnored) then
+        if eventSet and not paused and (not remoteIgnored and not argsIgnored) then
             local call = {
                 script = getCallingScript(),
                 args = vargs,
@@ -141,7 +142,7 @@ for _name, hook in pairs(methodHooks) do
             local remoteIgnored = remote.Ignored 
             local argsIgnored = remote:AreArgsIgnored(vargs)
             
-            if eventSet and (not remoteIgnored and not argsIgnored) then
+            if eventSet and not paused and (not remoteIgnored and not argsIgnored) then
                 local call = {
                     script = getCallingScript(),
                     args = vargs,
@@ -167,4 +168,6 @@ RemoteSpy.RemotesViewing = remotesViewing
 RemoteSpy.CurrentRemotes = currentRemotes
 RemoteSpy.ConnectEvent = connectEvent
 RemoteSpy.RequiredMethods = requiredMethods
+RemoteSpy.SetPaused = function(state) paused = state and true or false end
+RemoteSpy.IsPaused = function() return paused end
 return RemoteSpy

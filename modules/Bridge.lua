@@ -1,5 +1,6 @@
 local Bridge = {}
 local RemoteSpy = import("modules/RemoteSpy")
+local ClosureSpy = import("modules/ClosureSpy")
 local HttpService = game:GetService("HttpService")
 
 local Tag = "__PEROXIDE__"
@@ -170,6 +171,14 @@ function Actions.Stop()
     end
 
     return RemoteSpy.RemotesViewing
+end
+
+function Actions.Pause(Payload)
+    local State = Payload.State and true or false
+
+    RemoteSpy.SetPaused(State)
+    pcall(function() ClosureSpy.SetPaused(State) end)
+    return { Paused = State }
 end
 
 function Actions.RemoteLogs(Payload)

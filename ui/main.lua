@@ -3,6 +3,8 @@ local OkTheme, ThemeManager = pcall(import, "ui/ThemeManager")
 local OkSave, SaveManager = pcall(import, "ui/SaveManager")
 local RemoteSpy = import("modules/RemoteSpy")
 local ClosureSpy = import("modules/ClosureSpy")
+local ScriptScanner = import("modules/ScriptScanner")
+local ModuleScanner = import("modules/ModuleScanner")
 local Closure = import("objects/Closure")
 
 local RunService = game:GetService("RunService")
@@ -94,6 +96,8 @@ local Window = Library:CreateWindow({
 local Tabs = {
     RemoteSpy = Window:AddTab("RemoteSpy"),
     ClosureSpy = Window:AddTab("ClosureSpy"),
+    ScriptScanner = Window:AddTab("Scripts"),
+    ModuleScanner = Window:AddTab("Modules"),
     Settings = Window:AddTab("Settings"),
 }
 
@@ -247,6 +251,15 @@ RemoteCaptureBox:AddToggle("HexView", {
         HexView = Value
         if SelectedCall then SelectRemoteCall(SelectedCallIndex, SelectedCall) end
         RebuildRemoteCalls()
+    end,
+})
+
+RemoteCaptureBox:AddToggle("PauseCapture", {
+    Text = "Pause capture",
+    Default = false,
+    Callback = function(Value)
+        RemoteSpy.SetPaused(Value)
+        ClosureSpy.SetPaused(Value)
     end,
 })
 
@@ -577,6 +590,109 @@ ClosureCallsBox:AddButton({
         end
     end,
 })
+
+local function BuildScanner(Tab, Scanner)
+    local SearchBox = Tab:AddLeftGroupbox("Search")
+    local ResultsBox = Tab:AddLeftGroupbox("Results")
+    local ScannerSelectedBox = Tab:AddRightGroupbox("Selected")
+    local DetailBox = Tab:AddRightGroupbox("Detail")
+
+    local ResultList = ResultsBox:AddList({ Height = 240 })
+    local SelectedLabel = ScannerSelectedBox:AddLabel("Selected: none", true)
+    local DetailList = DetailBox:AddList({ Height = 250 })
+
+    local Query = ""
+    local SelectedObject = nil
+    local SelectedInstance = nil
+
+    local function Fill(Values, IsProto)
+        DetailList:Clear()
+        if typeof(Values) ~= "table" then return end
+
+        for Index = 1, #Values do
+            local Value = Values[Index]
+
+            if IsProto then
+                DetailList:AddRow(`[{Index}] proto {Location(Value)}`, function()
+                    SpyClosure(Value)
+                end)
+            else
+                local Row = DetailList:AddRow(`[{Index}] {typeof(Value)}: {Summarize(Value)}`, function()
+                    if setClipboard then setClipboard(DescribeFull(Value)) end
+                end)
+                Row:SetCopyValue(DescribeFull(Value))
+            end
+        end
+    end
+
+    local function Select(Instance, Object)
+        SelectedInstance = Instance
+        SelectedObject = Object
+        DetailList:Clear()
+        local Ok, Path = pcall(getInstancePath, Instance)
+        SelectedLabel:SetText(`Selected: {Instance.Name} [{Instance.ClassName}]\n{Ok and Path or Instance.Name}`)
+    end
+
+    SearchBox:AddInput("Query", {
+        Text = "Name filter",
+        Default = "",
+        Finished = false,
+        Callback = function(Value) Query = Value end,
+    })
+
+    SearchBox:AddButton({
+        Text = "Scan",
+        Func = function()
+            ResultList:Clear()
+            DetailList:Clear()
+            SelectedObject = nil
+            SelectedInstance = nil
+            SelectedLabel:SetText("Selected: none")
+
+            local Ok, Found = pcall(Scanner.Scan, Query:lower())
+            if not Ok or typeof(Found) ~= "table" then return end
+
+            local Count = 0
+            for Instance, Object in next, Found do
+                ResultList:AddRow(`{Instance.Name} [{Instance.ClassName}]`, function()
+                    Select(Instance, Object)
+                end)
+                Count += 1
+            end
+
+            Library:Notify(`Found {Count} result(s)`, 2)
+        end,
+    })
+
+    ScannerSelectedBox:AddButton({
+        Text = "Constants",
+        Func = function()
+            if SelectedObject then Fill(SelectedObject.Constants, false) end
+        end,
+    }):AddButton({
+        Text = "Protos",
+        Func = function()
+            if SelectedObject then Fill(SelectedObject.Protos, true) end
+        end,
+    })
+
+    ScannerSelectedBox:AddButton({
+        Text = "Copy path",
+        Func = function()
+            if SelectedInstance and setClipboard then setClipboard(getInstancePath(SelectedInstance)) end
+        end,
+    }):AddButton({
+        Text = "Spy main",
+        Func = function()
+            if not SelectedInstance then return end
+            local Ok, Chunk = pcall(getScriptClosure, SelectedInstance)
+            if Ok and typeof(Chunk) == "function" then SpyClosure(Chunk) end
+        end,
+    })
+end
+
+BuildScanner(Tabs.ScriptScanner, ScriptScanner)
+BuildScanner(Tabs.ModuleScanner, ModuleScanner)
 
 local MenuBox = Tabs.Settings:AddLeftGroupbox("Menu")
 
