@@ -5,6 +5,8 @@ local HttpService = game:GetService("HttpService")
 local Tag = "__PEROXIDE__"
 local Actions = {}
 
+Bridge.Echo = false
+
 local function DescribeValue(Value)
     local ValueType = typeof(Value)
     local Described = { Type = ValueType }
@@ -89,6 +91,42 @@ local function CountRemotes()
     return Total
 end
 
+local function MethodFor(ClassName)
+    if ClassName == "RemoteFunction" then
+        return "InvokeServer"
+    elseif ClassName == "BindableEvent" then
+        return "Fire"
+    elseif ClassName == "BindableFunction" then
+        return "Invoke"
+    end
+
+    return "FireServer"
+end
+
+local function BuildScript(Instance, Call)
+    local OkPath, Path = pcall(getInstancePath, Instance)
+    local OkArgs, Arguments = pcall(tableToString, Call.args)
+    local Method = MethodFor(Instance.ClassName)
+
+    return `local arguments = {OkArgs and Arguments or "{}"}\n\n{OkPath and Path or Instance.Name}:{Method}(unpack(arguments))`
+end
+
+local function FindRemote(Payload)
+    for Instance, Remote in next, RemoteSpy.CurrentRemotes do
+        if Payload.Path and Instance:GetFullName() == Payload.Path then
+            return Instance, Remote
+        end
+
+        if Payload.Name and Instance.Name == Payload.Name then
+            return Instance, Remote
+        end
+    end
+end
+
+local function ResolveCall(Remote, Index)
+    return Remote.Logs[Index or #Remote.Logs]
+end
+
 function Actions.Ping()
     return { Name = "Peroxide" }
 end
@@ -163,6 +201,65 @@ function Actions.ClearRemotes()
     return { Cleared = Cleared }
 end
 
+function Actions.Remote(Payload)
+    local Instance, Remote = FindRemote(Payload)
+    if not Remote then error("remote not found") end
+
+    return DescribeRemote(Instance, Remote, Payload.Max)
+end
+
+function Actions.SetBlocked(Payload)
+    local _, Remote = FindRemote(Payload)
+    if not Remote then error("remote not found") end
+
+    Remote.Blocked = Payload.State and true or false
+    return { Blocked = Remote.Blocked }
+end
+
+function Actions.SetIgnored(Payload)
+    local _, Remote = FindRemote(Payload)
+    if not Remote then error("remote not found") end
+
+    Remote.Ignored = Payload.State and true or false
+    return { Ignored = Remote.Ignored }
+end
+
+function Actions.ClearRemote(Payload)
+    local _, Remote = FindRemote(Payload)
+    if not Remote then error("remote not found") end
+
+    Remote.Clear(Remote)
+    return { Cleared = true }
+end
+
+function Actions.Repeat(Payload)
+    local Instance, Remote = FindRemote(Payload)
+    if not Remote then error("remote not found") end
+
+    local Call = ResolveCall(Remote, Payload.Index)
+    if not Call then error("call not found") end
+
+    local Method = MethodFor(Instance.ClassName)
+
+    task.spawn(function()
+        pcall(function()
+            Instance[Method](Instance, unpack(Call.args))
+        end)
+    end)
+
+    return { Repeated = true }
+end
+
+function Actions.GenerateScript(Payload)
+    local Instance, Remote = FindRemote(Payload)
+    if not Remote then error("remote not found") end
+
+    local Call = ResolveCall(Remote, Payload.Index)
+    if not Call then error("call not found") end
+
+    return { Script = BuildScript(Instance, Call) }
+end
+
 function Actions.Eval(Payload)
     local Source = Payload.Source
 
@@ -226,7 +323,10 @@ function Bridge.Run(Payload)
         Response = { Ok = false, Action = Payload.Action, Error = "unknown action" }
     end
 
-    Bridge.Emit(Response)
+    if Bridge.Echo then
+        Bridge.Emit(Response)
+    end
+
     return Response
 end
 

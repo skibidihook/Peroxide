@@ -2,6 +2,7 @@ local Library = import("ui/Library")
 local RemoteSpy = import("modules/RemoteSpy")
 
 local RunService = game:GetService("RunService")
+local HttpService = game:GetService("HttpService")
 local Bridge = px.Bridge
 
 local function MethodFor(ClassName)
@@ -126,9 +127,7 @@ local function SelectCall(Index, Call)
     for ArgIndex = 1, #Call.args do
         local Value = Call.args[ArgIndex]
         ArgList:AddRow(`[{ArgIndex}] {typeof(Value)}: {Summarize(Value)}`, function()
-            local Full = DescribeFull(Value)
-            if setClipboard then setClipboard(Full) end
-            print(`[Peroxide] arg{ArgIndex} = {Full}`)
+            if setClipboard then setClipboard(DescribeFull(Value)) end
         end)
     end
 end
@@ -245,9 +244,7 @@ CallsBox:AddButton({
     Text = "Generate script",
     Func = function()
         if SelectedInstance and SelectedCall and setClipboard then
-            local Source = GenerateScript(SelectedInstance, SelectedCall)
-            setClipboard(Source)
-            print(Source)
+            setClipboard(GenerateScript(SelectedInstance, SelectedCall))
         end
     end,
 })
@@ -257,41 +254,18 @@ CallsBox:AddButton({
     Func = function()
         if SelectedCall and SelectedCall.script and setClipboard then
             setClipboard(getInstancePath(SelectedCall.script))
-            print(`[Peroxide] caller: {getInstancePath(SelectedCall.script)}`)
         end
     end,
 })
 
 CallsBox:AddButton({
-    Text = "Dump remote to console",
+    Text = "Copy remote (JSON)",
     Func = function()
-        local Remote = SelectedInstance and RemoteSpy.CurrentRemotes[SelectedInstance]
-        if not Remote then return end
+        if not SelectedInstance or not Bridge or not setClipboard then return end
 
-        if Bridge then
-            local Calls = {}
-
-            for Index = 1, #Remote.Logs do
-                local Described = {}
-                local Args = Remote.Logs[Index].args
-
-                for ArgIndex = 1, #Args do
-                    Described[ArgIndex] = Bridge.DescribeValue(Args[ArgIndex])
-                end
-
-                Calls[Index] = Described
-            end
-
-            Bridge.Emit({
-                Ok = true,
-                Action = "RemoteDump",
-                Data = {
-                    Remote = SelectedInstance.Name,
-                    Class = SelectedInstance.ClassName,
-                    Path = getInstancePath(SelectedInstance),
-                    Calls = Calls,
-                },
-            })
+        local Response = Bridge.Run({ Action = "Remote", Path = SelectedInstance:GetFullName(), Max = 50 })
+        if Response.Ok then
+            setClipboard(HttpService:JSONEncode(Response.Data))
         end
     end,
 })
