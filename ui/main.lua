@@ -4,6 +4,18 @@ local RemoteSpy = import("modules/RemoteSpy")
 local RunService = game:GetService("RunService")
 local Bridge = px.Bridge
 
+local function MethodFor(ClassName)
+    if ClassName == "RemoteFunction" then
+        return "InvokeServer"
+    elseif ClassName == "BindableEvent" then
+        return "Fire"
+    elseif ClassName == "BindableFunction" then
+        return "Invoke"
+    end
+
+    return "FireServer"
+end
+
 local function Summarize(Value)
     local Kind = typeof(Value)
 
@@ -11,7 +23,7 @@ local function Summarize(Value)
         return Value.ClassName
     elseif Kind == "string" then
         local Text = Value
-        if #Text > 18 then Text = Text:sub(1, 18) .. "..." end
+        if #Text > 22 then Text = Text:sub(1, 22) .. "..." end
         return `"{Text}"`
     elseif Kind == "table" then
         return "{table}"
@@ -32,6 +44,39 @@ local function SummarizeArgs(Arguments)
     return (#Parts > 0 and table.concat(Parts, ", ")) or "(no args)"
 end
 
+local function DescribeFull(Value)
+    local Kind = typeof(Value)
+
+    if Kind == "Instance" then
+        return getInstancePath(Value)
+    elseif Kind == "string" then
+        return `"{Value}"`
+    elseif Kind == "table" then
+        return tableToString(Value)
+    elseif isUserdata(Kind) then
+        return userdataValue(Value)
+    end
+
+    return tostring(Value)
+end
+
+local function GenerateScript(Instance, Call)
+    local Path = getInstancePath(Instance)
+    local Method = MethodFor(Instance.ClassName)
+    local Arguments = tableToString(Call.args)
+
+    return `local arguments = {Arguments}\n\n{Path}:{Method}(unpack(arguments))`
+end
+
+local function RepeatCall(Instance, Call)
+    task.spawn(function()
+        local Method = MethodFor(Instance.ClassName)
+        pcall(function()
+            Instance[Method](Instance, unpack(Call.args))
+        end)
+    end)
+end
+
 local Window = Library:CreateWindow({
     Title = "Peroxide",
     Center = true,
@@ -47,46 +92,54 @@ local Tabs = {
 
 local CaptureBox = Tabs.RemoteSpy:AddLeftGroupbox("Capture")
 local RemotesBox = Tabs.RemoteSpy:AddLeftGroupbox("Remotes")
+local SelectedBox = Tabs.RemoteSpy:AddRightGroupbox("Selected")
 local CallsBox = Tabs.RemoteSpy:AddRightGroupbox("Calls")
+local ArgsBox = Tabs.RemoteSpy:AddRightGroupbox("Arguments")
 
-local RemoteList = RemotesBox:AddList({ Height = 260 })
-local CallList = CallsBox:AddList({ Height = 300 })
+local RemoteList = RemotesBox:AddList({ Height = 240 })
+local SelectedLabel = SelectedBox:AddLabel("Selected: none", true)
+local CallList = CallsBox:AddList({ Height = 170 })
+local ArgList = ArgsBox:AddList({ Height = 150 })
 
 local SelectedInstance = nil
+local SelectedCall = nil
 local RowByInstance = {}
 local ShownCalls = 0
 
-local function DumpCall(Instance, Index, Call)
-    print(`[Peroxide] {Instance:GetFullName()} call #{Index}`)
-
-    for ArgIndex = 1, #Call.args do
-        print(`  arg{ArgIndex}: {Summarize(Call.args[ArgIndex])}`)
+local function UpdateSelectedLabel()
+    if not SelectedInstance then
+        SelectedLabel:SetText("Selected: none")
+        return
     end
 
-    if Bridge then
-        local Described = {}
+    local Remote = RemoteSpy.CurrentRemotes[SelectedInstance]
+    local Blocked = Remote and Remote.Blocked or false
+    local Ignored = Remote and Remote.Ignored or false
 
-        for ArgIndex = 1, #Call.args do
-            Described[ArgIndex] = Bridge.DescribeValue(Call.args[ArgIndex])
-        end
+    SelectedLabel:SetText(`Selected: {SelectedInstance.Name} [{SelectedInstance.ClassName}]\nBlocked: {tostring(Blocked)} | Ignored: {tostring(Ignored)}`)
+end
 
-        Bridge.Emit({
-            Ok = true,
-            Action = "RemoteCall",
-            Data = {
-                Remote = Instance.Name,
-                Class = Instance.ClassName,
-                Index = Index,
-                Arguments = Described,
-            },
-        })
+local function SelectCall(Index, Call)
+    SelectedCall = Call
+    ArgList:Clear()
+
+    for ArgIndex = 1, #Call.args do
+        local Value = Call.args[ArgIndex]
+        ArgList:AddRow(`[{ArgIndex}] {typeof(Value)}: {Summarize(Value)}`, function()
+            local Full = DescribeFull(Value)
+            if setClipboard then setClipboard(Full) end
+            print(`[Peroxide] arg{ArgIndex} = {Full}`)
+        end)
     end
 end
 
 local function SelectRemote(Instance)
     SelectedInstance = Instance
+    SelectedCall = nil
     ShownCalls = 0
     CallList:Clear()
+    ArgList:Clear()
+    UpdateSelectedLabel()
 end
 
 local function RefreshRemotes()
@@ -115,7 +168,7 @@ local function RefreshCalls()
     for Index = ShownCalls + 1, #Logs do
         local Call = Logs[Index]
         CallList:AddRow(`#{Index}  {SummarizeArgs(Call.args)}`, function()
-            DumpCall(SelectedInstance, Index, Call)
+            SelectCall(Index, Call)
         end)
     end
 
@@ -143,31 +196,102 @@ RemotesBox:AddButton({
 
         RemoteList:Clear()
         CallList:Clear()
+        ArgList:Clear()
         table.clear(RowByInstance)
         SelectedInstance = nil
+        SelectedCall = nil
         ShownCalls = 0
+        UpdateSelectedLabel()
     end,
 })
 
-CallsBox:AddButton({
-    Text = "Dump to console",
+SelectedBox:AddButton({
+    Text = "Toggle block",
     Func = function()
-        if not SelectedInstance then return end
+        local Remote = SelectedInstance and RemoteSpy.CurrentRemotes[SelectedInstance]
+        if Remote then
+            Remote.Block(Remote)
+            UpdateSelectedLabel()
+        end
+    end,
+}):AddButton({
+    Text = "Toggle ignore",
+    Func = function()
+        local Remote = SelectedInstance and RemoteSpy.CurrentRemotes[SelectedInstance]
+        if Remote then
+            Remote.Ignore(Remote)
+            UpdateSelectedLabel()
+        end
+    end,
+})
 
-        local Remote = RemoteSpy.CurrentRemotes[SelectedInstance]
-        if not Remote then return end
-
-        for Index = 1, #Remote.Logs do
-            DumpCall(SelectedInstance, Index, Remote.Logs[Index])
+SelectedBox:AddButton({
+    Text = "Copy remote path",
+    Func = function()
+        if SelectedInstance and setClipboard then
+            setClipboard(getInstancePath(SelectedInstance))
         end
     end,
 })
 
 CallsBox:AddButton({
-    Text = "Copy remote path",
+    Text = "Repeat call",
     Func = function()
-        if SelectedInstance and setClipboard and getInstancePath then
-            setClipboard(getInstancePath(SelectedInstance))
+        if SelectedInstance and SelectedCall then
+            RepeatCall(SelectedInstance, SelectedCall)
+        end
+    end,
+}):AddButton({
+    Text = "Generate script",
+    Func = function()
+        if SelectedInstance and SelectedCall and setClipboard then
+            local Source = GenerateScript(SelectedInstance, SelectedCall)
+            setClipboard(Source)
+            print(Source)
+        end
+    end,
+})
+
+CallsBox:AddButton({
+    Text = "Copy calling script",
+    Func = function()
+        if SelectedCall and SelectedCall.script and setClipboard then
+            setClipboard(getInstancePath(SelectedCall.script))
+            print(`[Peroxide] caller: {getInstancePath(SelectedCall.script)}`)
+        end
+    end,
+})
+
+CallsBox:AddButton({
+    Text = "Dump remote to console",
+    Func = function()
+        local Remote = SelectedInstance and RemoteSpy.CurrentRemotes[SelectedInstance]
+        if not Remote then return end
+
+        if Bridge then
+            local Calls = {}
+
+            for Index = 1, #Remote.Logs do
+                local Described = {}
+                local Args = Remote.Logs[Index].args
+
+                for ArgIndex = 1, #Args do
+                    Described[ArgIndex] = Bridge.DescribeValue(Args[ArgIndex])
+                end
+
+                Calls[Index] = Described
+            end
+
+            Bridge.Emit({
+                Ok = true,
+                Action = "RemoteDump",
+                Data = {
+                    Remote = SelectedInstance.Name,
+                    Class = SelectedInstance.ClassName,
+                    Path = getInstancePath(SelectedInstance),
+                    Calls = Calls,
+                },
+            })
         end
     end,
 })
