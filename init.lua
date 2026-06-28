@@ -237,9 +237,28 @@ function environment.import(asset)
         return unpack(importCache[asset])
     end
 
-    local source = game:HttpGetAsync("https://raw.githubusercontent.com/" .. user .. "/Peroxide/" .. branch .. '/' .. asset .. ".lua?_=" .. tostring(tick()))
-    local assets = { loadstring(source, asset .. '.lua')() }
+    local url = "https://raw.githubusercontent.com/" .. user .. "/Peroxide/" .. branch .. '/' .. asset .. ".lua?_=" .. tostring(tick())
+    local source
 
+    for _attempt = 1, 3 do
+        local ok, result = pcall(game.HttpGetAsync, game, url)
+        if ok and type(result) == "string" and #result > 0 then
+            source = result
+            break
+        end
+        task.wait(0.3)
+    end
+
+    if not source then
+        error("<PX> failed to fetch " .. asset)
+    end
+
+    local chunk, compileError = loadstring(source, asset .. '.lua')
+    if not chunk then
+        error("<PX> failed to compile " .. asset .. ": " .. tostring(compileError))
+    end
+
+    local assets = { chunk() }
     importCache[asset] = assets
     return unpack(assets)
 end
