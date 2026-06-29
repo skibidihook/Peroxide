@@ -23,7 +23,7 @@ local remoteMethods = {
 
 local remotesViewing = {
     RemoteEvent = true,
-    RemoteFunction = false,
+    RemoteFunction = true,
     BindableEvent = false,
     BindableFunction = false
 }

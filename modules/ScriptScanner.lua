@@ -14,11 +14,7 @@ local function scan(query)
     local scripts = {}
     query = (query or ""):lower()
 
-    local list = (getscripts and getscripts())
-        or (getrunningscripts and getrunningscripts())
-        or {}
-
-    for _i, script in pairs(list) do
+    local function consider(script)
         if typeof(script) == "Instance"
             and not scripts[script]
             and (script:IsA("LocalScript") or script:IsA("Script"))
@@ -30,6 +26,22 @@ local function scan(query)
             else
                 scripts[script] = { Instance = script, Constants = {}, Protos = {} }
             end
+        end
+    end
+
+    for _i, script in pairs(game:GetDescendants()) do
+        consider(script)
+    end
+
+    if getnilinstances then
+        for _i, instance in pairs(getnilinstances()) do
+            consider(instance)
+        end
+    end
+
+    if getscripts then
+        for _i, script in pairs(getscripts()) do
+            consider(script)
         end
     end
 

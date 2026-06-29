@@ -11,11 +11,36 @@ local requiredMethods = {
 
 local function scan(query)
     local modules = {}
-    query = query or ""
-    
-    for _i, module in pairs(getLoadedModules()) do
-        if module.Name:lower():find(query) then
-            modules[module] = ModuleScript.new(module)
+    query = (query or ""):lower()
+
+    local function consider(module)
+        if typeof(module) == "Instance"
+            and not modules[module]
+            and module:IsA("ModuleScript")
+            and module.Name:lower():find(query, 1, true)
+        then
+            local okNew, object = pcall(ModuleScript.new, module)
+            if okNew and object then
+                modules[module] = object
+            else
+                modules[module] = { Instance = module, Constants = {}, Protos = {} }
+            end
+        end
+    end
+
+    for _i, module in pairs(game:GetDescendants()) do
+        consider(module)
+    end
+
+    if getnilinstances then
+        for _i, instance in pairs(getnilinstances()) do
+            consider(instance)
+        end
+    end
+
+    if getLoadedModules then
+        for _i, module in pairs(getLoadedModules()) do
+            consider(module)
         end
     end
 
