@@ -682,7 +682,7 @@ local function BuildScanner(Tab, Scanner)
         end,
     })
 
-    SearchBox:AddButton({ Text = "Refresh", Func = function() Refresh(true) end })
+    SearchBox:AddButton({ Text = "Scan", Func = function() Refresh(true) end })
 
     ScannerSelectedBox:AddButton({
         Text = "Constants",
@@ -709,8 +709,6 @@ local function BuildScanner(Tab, Scanner)
             if Ok and typeof(Chunk) == "function" then SpyClosure(Chunk) end
         end,
     })
-
-    Refresh(false)
 end
 
 BuildScanner(Tabs.ScriptScanner, ScriptScanner)
@@ -719,16 +717,32 @@ BuildScanner(Tabs.ModuleScanner, ModuleScanner)
 local MenuBox = Tabs.Settings:AddLeftGroupbox("Menu")
 
 MenuBox:AddButton({ Text = "Unload", Func = function() Library:Unload() end })
-MenuBox:AddLabel("Menu bind"):AddKeyPicker("MenuKeybind", { Default = "RightShift", NoUI = true, Text = "Menu keybind" })
 
-Library.ToggleKeybind = Options.MenuKeybind
+local MenuKey = "RightShift"
+
+MenuBox:AddDropdown("MenuKey", {
+    Text = "Menu toggle key",
+    Values = { "RightShift", "RightControl", "LeftAlt", "RightAlt", "End", "Insert", "Delete", "Home", "F1", "F2", "F3", "F4", "F5", "F6" },
+    Default = "RightShift",
+    Multi = false,
+    Callback = function(Value)
+        MenuKey = Value
+    end,
+})
+
+px.Events.PeroxideMenuToggle = game:GetService("UserInputService").InputBegan:Connect(function(Input, Processed)
+    if Processed then return end
+    if Input.UserInputType == Enum.UserInputType.Keyboard and Input.KeyCode.Name == MenuKey then
+        Library:Toggle()
+    end
+end)
 
 if OkTheme and OkSave and ThemeManager and SaveManager then
     pcall(function()
         ThemeManager:SetLibrary(Library)
         SaveManager:SetLibrary(Library)
         SaveManager:IgnoreThemeSettings()
-        SaveManager:SetIgnoreIndexes({ "MenuKeybind" })
+        SaveManager:SetIgnoreIndexes({ "MenuKey" })
         ThemeManager:SetFolder("Peroxide")
         SaveManager:SetFolder("Peroxide")
         SaveManager:BuildConfigSection(Tabs.Settings)
