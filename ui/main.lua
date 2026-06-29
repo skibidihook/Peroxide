@@ -719,7 +719,7 @@ BuildScanner(Tabs.ModuleScanner, ModuleScanner)
 local MenuBox = Tabs.Settings:AddLeftGroupbox("Menu")
 
 MenuBox:AddButton({ Text = "Unload", Func = function() Library:Unload() end })
-MenuBox:AddLabel("Menu bind"):AddKeyPicker("MenuKeybind", { Default = "End", NoUI = true, Text = "Menu keybind" })
+MenuBox:AddLabel("Menu bind"):AddKeyPicker("MenuKeybind", { Default = "RightShift", NoUI = true, Text = "Menu keybind" })
 
 Library.ToggleKeybind = Options.MenuKeybind
 
