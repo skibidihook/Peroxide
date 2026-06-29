@@ -181,6 +181,12 @@ function Actions.Pause(Payload)
     return { Paused = State }
 end
 
+function Actions.CaptureActors()
+    if not RemoteSpy.CaptureActors then error("actors not supported") end
+
+    return { Hooked = RemoteSpy.CaptureActors() }
+end
+
 function Actions.RemoteLogs(Payload)
     local MaxLogs = Payload.Max
     local Limit = Payload.Limit

@@ -14,20 +14,21 @@ local function scan(query)
     local scripts = {}
     query = (query or ""):lower()
 
-    for _i, value in pairs(getGc()) do
-        if type(value) == "function" and isLClosure(value) and not isXClosure(value) then
-            local ok, env = pcall(getfenv, value)
-            local script = ok and rawget(env, "script")
+    local list = (getscripts and getscripts())
+        or (getrunningscripts and getrunningscripts())
+        or {}
 
-            if typeof(script) == "Instance"
-                and not scripts[script]
-                and script:IsA("LocalScript")
-                and script.Name:lower():find(query)
-            then
-                local okNew, object = pcall(LocalScript.new, script)
-                if okNew and object then
-                    scripts[script] = object
-                end
+    for _i, script in pairs(list) do
+        if typeof(script) == "Instance"
+            and not scripts[script]
+            and (script:IsA("LocalScript") or script:IsA("Script"))
+            and script.Name:lower():find(query, 1, true)
+        then
+            local okNew, object = pcall(LocalScript.new, script)
+            if okNew and object then
+                scripts[script] = object
+            else
+                scripts[script] = { Instance = script, Constants = {}, Protos = {} }
             end
         end
     end

@@ -263,6 +263,19 @@ RemoteCaptureBox:AddToggle("PauseCapture", {
     end,
 })
 
+RemoteCaptureBox:AddButton({
+    Text = "Hook actors",
+    Func = function()
+        if not RemoteSpy.CaptureActors then
+            Library:Notify("Actors not supported by executor", 3)
+            return
+        end
+
+        local Count = RemoteSpy.CaptureActors()
+        Library:Notify(`Hooked {Count} actor(s)`, 3)
+    end,
+})
+
 RemotesBox:AddButton({
     Text = "Clear all",
     Func = function()

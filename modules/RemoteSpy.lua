@@ -164,10 +164,89 @@ for _name, hook in pairs(methodHooks) do
     px.Hooks[originalMethod] = hook
 end
 
+local actorsCaptured = false
+
+local actorSource = [[
+local channelId = ...
+
+pcall(function()
+    local channel = get_comm_channel(channelId)
+    local getMethod = getnamecallmethod or get_namecall_method
+
+    local original
+    original = hookmetamethod(game, "__namecall", function(...)
+        local instance = ...
+
+        if typeof(instance) == "Instance" then
+            local method = getMethod()
+
+            if method == "FireServer" or method == "fireServer" or method == "InvokeServer" or method == "invokeServer" then
+                pcall(function()
+                    channel:Fire(instance, method, { select(2, ...) })
+                end)
+            end
+        end
+
+        return original(...)
+    end)
+end)
+]]
+
+local function captureActors()
+    if actorsCaptured then return 0 end
+    if not (create_comm_channel and run_on_actor and getactors) then return 0 end
+
+    actorsCaptured = true
+
+    local channelId, channel = create_comm_channel()
+
+    channel.Event:Connect(function(instance, method, vargs)
+        if typeof(instance) ~= "Instance" then return end
+
+        local className = instance.ClassName
+        if className == "UnreliableRemoteEvent" then
+            className = "RemoteEvent"
+        end
+
+        if not remotesViewing[className] then return end
+
+        local remote = currentRemotes[instance]
+        if not remote then
+            remote = Remote.new(instance)
+            currentRemotes[instance] = remote
+        end
+
+        local call = { script = nil, args = vargs, func = nil }
+
+        if eventSet and not paused and not remote.Ignored and not remote.AreArgsIgnored(remote, vargs) then
+            remote.IncrementCalls(remote, call)
+            remoteDataEvent.Fire(remoteDataEvent, instance, call)
+        end
+    end)
+
+    local count = 0
+
+    local function inject(list)
+        for _, actor in pairs(list) do
+            if pcall(run_on_actor, actor, actorSource, channelId) then
+                count = count + 1
+            end
+        end
+    end
+
+    inject(getactors())
+    if getdeletedactors then
+        inject(getdeletedactors())
+    end
+
+    return count
+end
+
 RemoteSpy.RemotesViewing = remotesViewing
 RemoteSpy.CurrentRemotes = currentRemotes
 RemoteSpy.ConnectEvent = connectEvent
 RemoteSpy.RequiredMethods = requiredMethods
 RemoteSpy.SetPaused = function(state) paused = state and true or false end
 RemoteSpy.IsPaused = function() return paused end
+RemoteSpy.CaptureActors = captureActors
 return RemoteSpy
