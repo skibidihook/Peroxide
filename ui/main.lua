@@ -263,18 +263,9 @@ RemoteCaptureBox:AddToggle("PauseCapture", {
     end,
 })
 
-RemoteCaptureBox:AddButton({
-    Text = "Hook actors",
-    Func = function()
-        if not RemoteSpy.CaptureActors then
-            Library:Notify("Actors not supported by executor", 3)
-            return
-        end
-
-        local Count = RemoteSpy.CaptureActors()
-        Library:Notify(`Hooked {Count} actor(s)`, 3)
-    end,
-})
+if RemoteSpy.CaptureActors then
+    pcall(RemoteSpy.CaptureActors)
+end
 
 RemotesBox:AddButton({
     Text = "Clear all",
@@ -615,6 +606,7 @@ local function BuildScanner(Tab, Scanner)
     local DetailList = DetailBox:AddList({ Height = 250 })
 
     local Query = ""
+    local AllResults = {}
     local SelectedObject = nil
     local SelectedInstance = nil
 
@@ -646,36 +638,51 @@ local function BuildScanner(Tab, Scanner)
         SelectedLabel:SetText(`Selected: {Instance.Name} [{Instance.ClassName}]\n{Ok and Path or Instance.Name}`)
     end
 
+    local function Render()
+        ResultList:Clear()
+        local Filter = Query:lower()
+
+        for _, Entry in next, AllResults do
+            if Filter == "" or Entry.Instance.Name:lower():find(Filter, 1, true) then
+                ResultList:AddRow(`{Entry.Instance.Name} [{Entry.Instance.ClassName}]`, function()
+                    Select(Entry.Instance, Entry.Object)
+                end)
+            end
+        end
+    end
+
+    local function Refresh(Notify)
+        AllResults = {}
+        SelectedObject = nil
+        SelectedInstance = nil
+        DetailList:Clear()
+        SelectedLabel:SetText("Selected: none")
+
+        local Ok, Found = pcall(Scanner.Scan, "")
+        if Ok and typeof(Found) == "table" then
+            for Instance, Object in next, Found do
+                AllResults[#AllResults + 1] = { Instance = Instance, Object = Object }
+            end
+        end
+
+        Render()
+
+        if Notify then
+            Library:Notify(`Found {#AllResults} item(s)`, 2)
+        end
+    end
+
     SearchBox:AddInput("Query", {
         Text = "Name filter",
         Default = "",
         Finished = false,
-        Callback = function(Value) Query = Value end,
-    })
-
-    SearchBox:AddButton({
-        Text = "Scan",
-        Func = function()
-            ResultList:Clear()
-            DetailList:Clear()
-            SelectedObject = nil
-            SelectedInstance = nil
-            SelectedLabel:SetText("Selected: none")
-
-            local Ok, Found = pcall(Scanner.Scan, Query:lower())
-            if not Ok or typeof(Found) ~= "table" then return end
-
-            local Count = 0
-            for Instance, Object in next, Found do
-                ResultList:AddRow(`{Instance.Name} [{Instance.ClassName}]`, function()
-                    Select(Instance, Object)
-                end)
-                Count += 1
-            end
-
-            Library:Notify(`Found {Count} result(s)`, 2)
+        Callback = function(Value)
+            Query = Value
+            Render()
         end,
     })
+
+    SearchBox:AddButton({ Text = "Refresh", Func = function() Refresh(true) end })
 
     ScannerSelectedBox:AddButton({
         Text = "Constants",
@@ -702,6 +709,8 @@ local function BuildScanner(Tab, Scanner)
             if Ok and typeof(Chunk) == "function" then SpyClosure(Chunk) end
         end,
     })
+
+    Refresh(false)
 end
 
 BuildScanner(Tabs.ScriptScanner, ScriptScanner)

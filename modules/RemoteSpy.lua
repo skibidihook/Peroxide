@@ -181,8 +181,9 @@ pcall(function()
             local method = getMethod()
 
             if method == "FireServer" or method == "fireServer" or method == "InvokeServer" or method == "invokeServer" then
+                local arguments = { select(2, ...) }
                 pcall(function()
-                    channel:Fire(instance, method, { select(2, ...) })
+                    channel:Fire(instance, method, arguments)
                 end)
             end
         end
@@ -192,54 +193,78 @@ pcall(function()
 end)
 ]]
 
-local function captureActors()
-    if actorsCaptured then return 0 end
-    if not (create_comm_channel and run_on_actor and getactors) then return 0 end
+local actorChannelId
+local hookedActors = setmetatable({}, { __mode = "k" })
 
-    actorsCaptured = true
+local function injectActor(actor)
+    if hookedActors[actor] then return false end
 
-    local channelId, channel = create_comm_channel()
-
-    channel.Event:Connect(function(instance, method, vargs)
-        if typeof(instance) ~= "Instance" then return end
-
-        local className = instance.ClassName
-        if className == "UnreliableRemoteEvent" then
-            className = "RemoteEvent"
-        end
-
-        if not remotesViewing[className] then return end
-
-        local remote = currentRemotes[instance]
-        if not remote then
-            remote = Remote.new(instance)
-            currentRemotes[instance] = remote
-        end
-
-        local call = { script = nil, args = vargs, func = nil }
-
-        if eventSet and not paused and not remote.Ignored and not remote.AreArgsIgnored(remote, vargs) then
-            remote.IncrementCalls(remote, call)
-            remoteDataEvent.Fire(remoteDataEvent, instance, call)
-        end
-    end)
-
-    local count = 0
-
-    local function inject(list)
-        for _, actor in pairs(list) do
-            if pcall(run_on_actor, actor, actorSource, channelId) then
-                count = count + 1
-            end
-        end
+    if pcall(run_on_actor, actor, actorSource, actorChannelId) then
+        hookedActors[actor] = true
+        return true
     end
 
-    inject(getactors())
+    return false
+end
+
+local function injectAll()
+    local count = 0
+
+    for _, actor in pairs(getactors()) do
+        if injectActor(actor) then count = count + 1 end
+    end
+
     if getdeletedactors then
-        inject(getdeletedactors())
+        for _, actor in pairs(getdeletedactors()) do
+            if injectActor(actor) then count = count + 1 end
+        end
     end
 
     return count
+end
+
+local function captureActors()
+    if not (create_comm_channel and run_on_actor and getactors) then return 0 end
+
+    if not actorsCaptured then
+        actorsCaptured = true
+
+        local channel
+        actorChannelId, channel = create_comm_channel()
+
+        channel.Event:Connect(function(instance, method, vargs)
+            if typeof(instance) ~= "Instance" then return end
+
+            local className = instance.ClassName
+            if className == "UnreliableRemoteEvent" then
+                className = "RemoteEvent"
+            end
+
+            if not remotesViewing[className] then return end
+
+            local remote = currentRemotes[instance]
+            if not remote then
+                remote = Remote.new(instance)
+                currentRemotes[instance] = remote
+            end
+
+            local call = { script = nil, args = vargs, func = nil }
+
+            if eventSet and not paused and not remote.Ignored and not remote.AreArgsIgnored(remote, vargs) then
+                remote.IncrementCalls(remote, call)
+                remoteDataEvent.Fire(remoteDataEvent, instance, call)
+            end
+        end)
+
+        task.spawn(function()
+            while actorsCaptured do
+                pcall(injectAll)
+                task.wait(3)
+            end
+        end)
+    end
+
+    return injectAll()
 end
 
 RemoteSpy.RemotesViewing = remotesViewing
